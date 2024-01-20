@@ -42,10 +42,6 @@ INIT_FUEL = {
         U.SEEKER:   100.0,
         U.BLUDGER:  100.0,
         },
-        U.P2:{
-        U.SEEKER:   100.0,
-        U.BLUDGER:  100.0,
-        },
     U.P2:{
         U.SEEKER:   100.0,
         U.BLUDGER:  100.0,
@@ -59,7 +55,7 @@ INIT_AMMO = {
         },
     U.P2:{
         U.SEEKER:   0,
-        U.BLUDGER:  1,
+        U.BLUDGER:  0,
         },
     }
 

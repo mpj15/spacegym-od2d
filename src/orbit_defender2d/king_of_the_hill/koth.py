@@ -246,7 +246,7 @@ class KOTHGame:
         #Figure out which player has more satellites, if any and add the difference as "removed" satellites with 0 fuel and ammo in position 0
         removed_sat_count = np.abs(n_tokens_alpha - n_tokens_beta)
         if removed_sat_count > 0:
-            if n_tokens_alpha > n_tokens_beta:
+            if n_tokens_alpha < n_tokens_beta:
                 for sat_i in range(removed_sat_count):
                     p1_state.append(None)
                     p1_state[-1] = token_catalog[U.P1 + U.TOKEN_DELIMITER + U.BLUDGER + U.TOKEN_DELIMITER + str(n_tokens_alpha)] = \
@@ -1345,9 +1345,9 @@ def log_game_to_file(game, logfile, actions=None):
                 print("alpha seeker out of fuel", file=f)
             if cur_game_state[U.P2][U.TOKEN_STATES][0].satellite.fuel <= game.inargs.min_fuel:
                 print("beta seeker out of fuel", file=f)
-            if cur_game_state[U.P1][U.SCORE] >= game.inargs.win_score:
+            if cur_game_state[U.P1][U.SCORE] >= game.inargs.win_score[U.P1]:
                 print("alpha reached Win Score", file=f)
-            if cur_game_state[U.P2][U.SCORE]  >= game.inargs.win_score:
+            if cur_game_state[U.P2][U.SCORE]  >= game.inargs.win_score[U.P2]:
                 print("beta reached Win Score", file=f)
             if cur_game_state[U.TURN_COUNT]  >= game.inargs.max_turns:
                 print("max turns reached", file=f)
