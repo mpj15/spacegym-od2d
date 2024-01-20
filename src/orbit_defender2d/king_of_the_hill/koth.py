@@ -65,20 +65,20 @@ class KOTHGame:
         max_ring: int, 
         min_ring: int, 
         geo_ring: int,
-        init_board_pattern: List,
-        init_fuel: Dict,
-        init_ammo: Dict,
-        min_fuel: float,
-        fuel_usage: Dict,
-        engage_probs: Dict,
-        illegal_action_score: float,
-        in_goal_points: float,
-        adj_goal_points: float,
-        fuel_points_factor: float,
-        win_score: float,
+        init_board_pattern: List, #
+        init_fuel: Dict, #
+        init_ammo: Dict, #
+        min_fuel: float, #
+        fuel_usage: Dict, #
+        engage_probs: Dict, #
+        illegal_action_score: float, #
+        in_goal_points: float, #
+        adj_goal_points: float, #
+        fuel_points_factor: float, #
+        win_score: float, #
         max_turns: int,
-        fuel_points_factor_bludger: float = 0.1,
-        asymmetric_flag: bool = False
+        fuel_points_factor_bludger: float = 0.1, #
+        asymmetric_flag: bool = False #
         ):
         '''
         Args:
