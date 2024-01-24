@@ -1358,7 +1358,7 @@ def log_game_to_file(game, logfile, actions=None):
             print_engagement_outcomes(game.engagement_outcomes, file=f)
             print_game_info(game, file=f)
             print_endgame_status(game, file=f)
-            
+
             #Close file and return
             f.close()
             return
