@@ -124,7 +124,8 @@ class EngagementGraph:
                         prob=decayed_guard_prob, 
                         success=success))
                     guard_count += 1
-                    decayed_guard_prob = guard_prob * (0.5**guard_count)
+                    #decayed_guard_prob = guard_prob * (0.5**guard_count)
+                    decayed_guard_prob = guard_prob
 
         return guard_outcomes
         
