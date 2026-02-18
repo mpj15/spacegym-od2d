@@ -11,12 +11,6 @@
 
 See the wiki for more info: https://github.com/mpj15/spacegym-od2d/wiki
 
-### Design Principles
-
-*TODO*
-
-------------
-
 ## Installation
 
 To install this package, run:
@@ -42,7 +36,7 @@ For developers, unit and integration tests are located in the `tests/` directory
 pytest -v
 ```
 
-Note that `test_game_server.py` can sometimes fail if too many processes are running due to slow responses between game servers and clients. It is recommended that tests be run seperately with the following two commands:
+Note that `test_game_server.py` can sometimes fail if too many processes are running due to slow responses between game servers and clients. It is recommended that tests be run separately with the following two commands:
 
 ```bash
 pytest . --ignore=tests/test_game_server.py # run all tests except game server
@@ -72,7 +66,7 @@ python koth_game_rollout_CLI.py
 
 ## Game: King Of the Hill (KOTH)
 
-The [King of the Hill Game](https://github.com/mit-ll/spacegym-od2d/tree/master/src/orbit_defender2d/king_of_the_hill) is a balanced game of two players. Each player has a collection of satellites (referred to as "pieces" or "tokens") that they control. Satellites are seperated into categories of point-scoring tokens ("High Value Asset- HVA") and defensive/offensive tokens ("Patrol"). Each satellites can move about the board by expending fuel and can engage with satellites of the opposing agent. Each player also has a special a goal location, i.e. "hill", on which they can place their seeker to score points. The objective of the game is to score more points that your opponent. You can minimize the number of points scored by your opponent by attacking their pieces.
+The [King of the Hill Game](https://github.com/mit-ll/spacegym-od2d/tree/master/src/orbit_defender2d/king_of_the_hill) is a balanced game of two players. Each player has a collection of satellites (referred to as "pieces" or "tokens") that they control. Satellites are separated into categories of point-scoring tokens ("High Value Asset- HVA") and defensive/offensive tokens ("Patrol"). Each satellite can move about the board by expending fuel and can engage with satellites of the opposing agent. Each player also has a special goal location, i.e. "hill", on which they can place their seeker to score points. The objective of the game is to score more points that your opponent. You can minimize the number of points scored by your opponent by attacking their pieces.
 
 For comprehensive rule set, please see the [__Game Rules Wiki__](https://github.com/mpj15/spacegym-od2d/wiki)
 
@@ -90,7 +84,7 @@ There is a human-playable interface to the game that uses a [game server](https:
 python src/orbit_defender2d/king_of_the_hill/examples/server_random_game.py
 ```
 
-There is also an AI playable that wraps the core KOTH game in a OpenAI Gym-like [environment](hhttps://github.com/mit-ll/spacegym-od2d/blob/master/src/orbit_defender2d/king_of_the_hill/examples/pettingzoo_random_game.py). To enable development of multi-agent RL algorithms we will be using a [PettingZoo](https://github.com/PettingZoo-Team/PettingZoo) environment, which is also described in this [paper](https://arxiv.org/pdf/2009.14471.pdf). For an example of the PettingZoo-wrapped KOTH game, see [`pettingzoo_random_game.py`](). This can be run as:
+There is also an AI playable that wraps the core KOTH game in an OpenAI Gym-like [environment](https://github.com/mit-ll/spacegym-od2d/blob/master/src/orbit_defender2d/king_of_the_hill/examples/pettingzoo_random_game.py). To enable development of multi-agent RL algorithms we will be using a [PettingZoo](https://github.com/PettingZoo-Team/PettingZoo) environment, which is also described in this [paper](https://arxiv.org/pdf/2009.14471.pdf). For an example of the PettingZoo-wrapped KOTH game, see [`pettingzoo_random_game.py`](https://github.com/mit-ll/spacegym-od2d/blob/master/src/orbit_defender2d/king_of_the_hill/examples/pettingzoo_random_game.py). This can be run as:
 
 ```bash
 python src/orbit_defender2d/king_of_the_hill/examples/pettingzoo_random_game.py
@@ -105,8 +99,6 @@ python src/orbit_defender2d/king_of_the_hill/examples/pettingzoo_random_rendered
 ------------
 
 ## Citation
-
-~~> TODO: *Zenodo DOI to be added upon making repo public*
 
 ```
 @inproceedings{allen2023spacegym,

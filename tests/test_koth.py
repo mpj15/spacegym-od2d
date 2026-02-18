@@ -877,10 +877,467 @@ def test_hypothesis_KOTHGame_get_points(game):
     elif bt_seek_sec in game.board_grid.get_all_adjacent_sectors(bt_goal_sec):
         assert beta_points == game.inargs.adj_goal_points[U.P2]
 
+# ---- Tests for previously untested functions ----
+
+def _make_small_game():
+    '''helper: create a small game with 1 ring and 1 bludger per side'''
+    return koth.KOTHGame(
+        max_ring=1,
+        min_ring=1,
+        geo_ring=1,
+        init_board_pattern_p1=INIT_BOARD_PATTERN_2,
+        init_board_pattern_p2=INIT_BOARD_PATTERN_2,
+        **DEFAULT_PARAMS_PARTIAL)
+
+def _make_default_game():
+    '''helper: create a default-sized game'''
+    return koth.KOTHGame(
+        max_ring=5,
+        min_ring=1,
+        geo_ring=4,
+        init_board_pattern_p1=INIT_BOARD_PATTERN_0,
+        init_board_pattern_p2=INIT_BOARD_PATTERN_0,
+        **DEFAULT_PARAMS_PARTIAL)
+
+
+# ---- reset_game ----
+
+def test_reset_game_restores_initial_state():
+    game = _make_default_game()
+    initial_turn = game.game_state[U.TURN_COUNT]
+    initial_phase = game.game_state[U.TURN_PHASE]
+
+    # mutate state
+    game.game_state[U.TURN_COUNT] = 99
+    game.game_state[U.P1][U.SCORE] = 999
+    game.game_state[U.GAME_DONE] = True
+
+    # reset
+    game.reset_game()
+
+    assert game.game_state[U.TURN_COUNT] == initial_turn
+    assert game.game_state[U.TURN_PHASE] == initial_phase
+    assert game.game_state[U.GAME_DONE] is False
+
+def test_reset_game_preserves_token_count():
+    game = _make_default_game()
+    n_alpha = game.n_tokens_alpha
+    n_beta = game.n_tokens_beta
+
+    game.reset_game()
+
+    assert game.n_tokens_alpha == n_alpha
+    assert game.n_tokens_beta == n_beta
+
+
+# ---- is_terminal_game_state ----
+
+def test_is_terminal_max_turns():
+    game = _make_default_game()
+    game.game_state[U.TURN_COUNT] = game.inargs.max_turns
+    assert game.is_terminal_game_state()
+
+def test_is_terminal_below_max_turns():
+    game = _make_default_game()
+    game.game_state[U.TURN_COUNT] = 0
+    # ensure scores are below win and seekers have fuel
+    game.game_state[U.P1][U.SCORE] = 0
+    game.game_state[U.P2][U.SCORE] = 0
+    assert not game.is_terminal_game_state()
+
+def test_is_terminal_win_score_p1():
+    game = _make_default_game()
+    game.game_state[U.P1][U.SCORE] = game.inargs.win_score[U.P1]
+    assert game.is_terminal_game_state()
+
+def test_is_terminal_win_score_p2():
+    game = _make_default_game()
+    game.game_state[U.P2][U.SCORE] = game.inargs.win_score[U.P2]
+    assert game.is_terminal_game_state()
+
+def test_is_terminal_seeker_no_fuel_p1():
+    game = _make_default_game()
+    game.game_state[U.P1][U.TOKEN_STATES][0].satellite.fuel = game.inargs.min_fuel
+    assert game.is_terminal_game_state()
+
+def test_is_terminal_seeker_no_fuel_p2():
+    game = _make_default_game()
+    game.game_state[U.P2][U.TOKEN_STATES][0].satellite.fuel = game.inargs.min_fuel
+    assert game.is_terminal_game_state()
+
+
+# ---- terminate_game ----
+
+def test_terminate_game_sets_done_flag():
+    game = _make_default_game()
+    assert not game.game_state[U.GAME_DONE]
+    game.terminate_game()
+    assert game.game_state[U.GAME_DONE]
+
+def test_terminate_game_returns_zero_sum():
+    game = _make_default_game()
+    game.game_state[U.P1][U.SCORE] = 50
+    game.game_state[U.P2][U.SCORE] = 30
+    result = game.terminate_game()
+    assert np.isclose(result[U.P1], -result[U.P2])
+    assert np.isclose(result[U.P1], 20.0)
+
+
+# ---- get_random_valid_actions ----
+
+def test_get_random_valid_actions_movement():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    actions = game.get_random_valid_actions()
+    assert actions is not None
+    assert len(actions) == len(game.token_catalog)
+    for tok_name, action in actions.items():
+        assert isinstance(action, U.MovementTuple)
+        assert action in game.game_state[U.LEGAL_ACTIONS][tok_name]
+
+def test_get_random_valid_actions_engagement():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+    actions = game.get_random_valid_actions()
+    assert actions is not None
+    for tok_name, action in actions.items():
+        assert isinstance(action, U.EngagementTuple)
+
+def test_get_random_valid_actions_drift_returns_none():
+    game = _make_default_game()
+    game.update_turn_phase(U.DRIFT)
+    actions = game.get_random_valid_actions()
+    assert actions is None
+
+
+# ---- get_noop_actions ----
+
+def test_get_noop_actions_movement():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    actions = game.get_noop_actions()
+    assert actions is not None
+    for tok_name, action in actions.items():
+        assert action.action_type == U.NOOP
+
+def test_get_noop_actions_engagement():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+    actions = game.get_noop_actions()
+    assert actions is not None
+    for tok_name, action in actions.items():
+        assert action.action_type == U.NOOP
+
+def test_get_noop_actions_drift_returns_none():
+    game = _make_default_game()
+    game.update_turn_phase(U.DRIFT)
+    actions = game.get_noop_actions()
+    assert actions is None
+
+
+# ---- get_token_id ----
+
+def test_get_token_id_seeker():
+    game = _make_default_game()
+    tok_id = game.get_token_id(U.P1, 0)
+    assert tok_id == 'Alpha:HVA:0'
+
+def test_get_token_id_bludger():
+    game = _make_default_game()
+    tok_id = game.get_token_id(U.P2, 1)
+    assert tok_id == 'Bravo:Patrol:1'
+
+def test_get_token_id_invalid_raises():
+    game = _make_default_game()
+    with pytest.raises(ValueError):
+        game.get_token_id(U.P1, 999)
+
+
+# ---- parse_token_id ----
+
+def test_parse_token_id():
+    player_id, role, num = koth.parse_token_id('Alpha:HVA:0')
+    assert player_id == 'Alpha'
+    assert role == 'HVA'
+    assert num == '0'
+
+def test_parse_token_id_bludger():
+    player_id, role, num = koth.parse_token_id('Bravo:Patrol:5')
+    assert player_id == 'Bravo'
+    assert role == 'Patrol'
+    assert num == '5'
+
+
+# ---- is_same_player ----
+
+def test_is_same_player_true():
+    assert koth.is_same_player('Alpha:HVA:0', 'Alpha:Patrol:1')
+
+def test_is_same_player_false():
+    assert not koth.is_same_player('Alpha:HVA:0', 'Bravo:HVA:0')
+
+
+# ---- is_legal_verbose_action ----
+
+def test_is_legal_verbose_action_valid_movement():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    legal = game.game_state[U.LEGAL_ACTIONS]
+    tok = 'Alpha:HVA:0'
+    # NOOP should always be legal
+    assert koth.is_legal_verbose_action(tok, U.MovementTuple(U.NOOP), legal)
+
+def test_is_legal_verbose_action_invalid_action_string():
+    game = _make_default_game()
+    legal = game.game_state[U.LEGAL_ACTIONS]
+    tok = 'Alpha:HVA:0'
+    assert not koth.is_legal_verbose_action(tok, U.INVALID_ACTION, legal)
+
+
+# ---- get_illegal_verbose_actions ----
+
+def test_get_illegal_verbose_actions_none_input():
+    illegal, alpha, beta = koth.get_illegal_verbose_actions(None, {})
+    assert len(illegal) == 0
+    assert not alpha
+    assert not beta
+
+def test_get_illegal_verbose_actions_all_legal():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    noop_actions = game.get_noop_actions()
+    illegal, alpha, beta = koth.get_illegal_verbose_actions(
+        noop_actions, game.game_state[U.LEGAL_ACTIONS])
+    assert len(illegal) == 0
+    assert not alpha
+    assert not beta
+
+
+# ---- enforce_legal_verbose_actions ----
+
+def test_enforce_legal_verbose_actions_valid():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    noop_actions = game.get_noop_actions()
+    assert game.enforce_legal_verbose_actions(noop_actions) is True
+
+def test_enforce_legal_verbose_actions_invalid():
+    game = _make_default_game()
+    game.update_turn_phase(U.MOVEMENT)
+    # create an invalid action for Alpha seeker
+    bad_actions = game.get_noop_actions()
+    bad_actions['Alpha:HVA:0'] = U.INVALID_ACTION
+    result = game.enforce_legal_verbose_actions(bad_actions)
+    assert result is False
+    assert game.game_state[U.P1][U.SCORE] == game.inargs.illegal_action_score
+
+
+# ---- update_turn_phase ----
+
+def test_update_turn_phase():
+    game = _make_default_game()
+    assert game.game_state[U.TURN_PHASE] == U.MOVEMENT
+
+    game.update_turn_phase(U.ENGAGEMENT)
+    assert game.game_state[U.TURN_PHASE] == U.ENGAGEMENT
+
+    game.update_turn_phase(U.DRIFT)
+    assert game.game_state[U.TURN_PHASE] == U.DRIFT
+
+def test_update_turn_phase_invalid_raises():
+    game = _make_default_game()
+    with pytest.raises(AssertionError):
+        game.update_turn_phase('invalid_phase')
+
+
+# ---- enact_engagements ----
+
+def test_enact_engagements_shoot():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+
+    # create a successful shoot outcome
+    game.engagement_outcomes = [
+        U.EngagementOutcomeTuple(
+            action_type=U.SHOOT,
+            attacker='Alpha:Patrol:1',
+            target='Bravo:HVA:0',
+            guardian=None,
+            prob=1.0,
+            success=True)
+    ]
+    init_ammo = game.token_catalog['Alpha:Patrol:1'].satellite.ammo
+    game.enact_engagements()
+
+    assert game.token_catalog['Alpha:Patrol:1'].satellite.ammo == init_ammo - 1
+    assert game.token_catalog['Bravo:HVA:0'].satellite.fuel == game.inargs.min_fuel
+
+def test_enact_engagements_shoot_miss():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+
+    init_fuel = game.token_catalog['Bravo:HVA:0'].satellite.fuel
+    game.engagement_outcomes = [
+        U.EngagementOutcomeTuple(
+            action_type=U.SHOOT,
+            attacker='Alpha:Patrol:1',
+            target='Bravo:HVA:0',
+            guardian=None,
+            prob=0.8,
+            success=False)
+    ]
+    game.enact_engagements()
+
+    # ammo still decremented
+    assert game.token_catalog['Alpha:Patrol:1'].satellite.ammo == DGP.INIT_AMMO[U.P1][U.BLUDGER] - 1
+    # target survives
+    assert game.token_catalog['Bravo:HVA:0'].satellite.fuel == init_fuel
+
+def test_enact_engagements_collide():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+
+    game.engagement_outcomes = [
+        U.EngagementOutcomeTuple(
+            action_type=U.COLLIDE,
+            attacker='Alpha:Patrol:1',
+            target='Bravo:HVA:0',
+            guardian=None,
+            prob=1.0,
+            success=True)
+    ]
+    game.enact_engagements()
+
+    # both destroyed on success
+    assert game.token_catalog['Alpha:Patrol:1'].satellite.fuel == game.inargs.min_fuel
+    assert game.token_catalog['Bravo:HVA:0'].satellite.fuel == game.inargs.min_fuel
+
+def test_enact_engagements_guard():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+
+    target_pos = game.token_catalog['Bravo:HVA:0'].position
+    game.engagement_outcomes = [
+        U.EngagementOutcomeTuple(
+            action_type=U.GUARD,
+            attacker=None,
+            target='Bravo:HVA:0',
+            guardian='Bravo:Patrol:1',
+            prob=1.0,
+            success=True)
+    ]
+    game.enact_engagements()
+
+    # guardian moves to target's position
+    assert game.token_catalog['Bravo:Patrol:1'].position == target_pos
+
+def test_enact_engagements_noop():
+    game = _make_small_game()
+    game.update_turn_phase(U.ENGAGEMENT)
+    init_catalog = deepcopy(game.token_catalog)
+    game.engagement_outcomes = [
+        U.EngagementOutcomeTuple(
+            action_type=U.NOOP,
+            attacker='Alpha:HVA:0',
+            target='Alpha:HVA:0',
+            guardian=None,
+            prob=1.0,
+            success=True)
+    ]
+    game.enact_engagements()
+    # nothing should change
+    for tok_name in game.token_catalog:
+        assert game.token_catalog[tok_name].satellite.fuel == init_catalog[tok_name].satellite.fuel
+
+
+# ---- get_fuel_points ----
+
+def test_get_fuel_points_initial():
+    game = _make_default_game()
+    fp1 = game.get_fuel_points(U.P1)
+    fp2 = game.get_fuel_points(U.P2)
+    assert fp1 > 0
+    assert fp2 > 0
+    # symmetric game should have equal fuel points
+    assert fp1 == fp2
+
+def test_get_fuel_points_zero_fuel():
+    game = _make_small_game()
+    # zero out all fuel
+    for tok_name, tok_state in game.token_catalog.items():
+        tok_state.satellite.fuel = 0.0
+    assert game.get_fuel_points(U.P1) == 0
+    assert game.get_fuel_points(U.P2) == 0
+
+
+# ---- init_board_pattern ----
+
+def test_init_board_pattern_zero():
+    pattern = koth.init_board_pattern(0)
+    assert pattern == [(0, 0)]
+
+def test_init_board_pattern_one():
+    pattern = koth.init_board_pattern(1)
+    total_tokens = sum(a[1] for a in pattern)
+    assert total_tokens == 1
+
+def test_init_board_pattern_ten():
+    pattern = koth.init_board_pattern(10)
+    total_tokens = sum(a[1] for a in pattern)
+    assert total_tokens == 10
+
+@pytest.mark.parametrize("n_tokens", [1, 2, 3, 5, 8, 10, 15])
+def test_init_board_pattern_token_count(n_tokens):
+    pattern = koth.init_board_pattern(n_tokens)
+    total = sum(a[1] for a in pattern)
+    assert total == n_tokens
+
+def test_init_board_pattern_sorted_by_azimuth():
+    pattern = koth.init_board_pattern(10)
+    azims = [a[0] for a in pattern]
+    assert azims == sorted(azims)
+
+def test_init_board_pattern_max_two_per_position():
+    pattern = koth.init_board_pattern(10)
+    for _, count in pattern:
+        assert count <= 2
+
+
+# ---- normal_choice_from_list ----
+
+def test_normal_choice_from_list_in_bounds():
+    for _ in range(100):
+        result = koth.normal_choice_from_list(10)
+        assert 0 <= result < 10
+
+def test_normal_choice_from_list_single_element():
+    result = koth.normal_choice_from_list(1)
+    assert result == 0
+
+
+# ---- Full game turn cycle ----
+
+def test_full_turn_cycle():
+    '''test a complete movement -> engagement -> drift cycle'''
+    game = _make_small_game()
+    assert game.game_state[U.TURN_PHASE] == U.MOVEMENT
+    assert game.game_state[U.TURN_COUNT] == 0
+
+    # movement phase
+    move_actions = game.get_noop_actions()
+    rewards = game.apply_verbose_actions(move_actions)
+    assert game.game_state[U.TURN_PHASE] == U.ENGAGEMENT
+
+    # engagement phase
+    engage_actions = game.get_noop_actions()
+    rewards = game.apply_verbose_actions(engage_actions)
+    assert game.game_state[U.TURN_PHASE] == U.DRIFT
+
+    # drift phase
+    rewards = game.apply_verbose_actions(None)
+    assert game.game_state[U.TURN_PHASE] == U.MOVEMENT
+    assert game.game_state[U.TURN_COUNT] == 1
+
+
 if __name__ == '__main__':
-    # test_KOTHGame_initial_game_state()
-    # test_KOTHGame_move_pieces(MOVE_SEQ_0,EXP_POS_0)
-    # test_KOTHGame_get_observation_0()
-    # test_KOTHGame_resolve_engagements(ENGAGE_0)
-    # test_get_illegal_verbose_actions_engage_0(ENGAGE_0)
     pass

@@ -548,68 +548,290 @@ def test_TwoPlayerGameServer_handle_inconsistent_player_uuid(two_player_game_ser
     assert 'message' in rep_msg['error'].keys()
     assert 'data'  not in rep_msg.keys()
 
-def notest_TwoPlayerGameServer_handle_move_phase(two_player_game_server_fixture):
-    """ test that complete move phase request updates game state
+def _register_both_players(plr1_sock, plr2_sock):
+    """Helper: register two players and return their UUIDs."""
+    registration_msg = dict()
+    registration_msg['apiVersion'] = API_VER_NUM_2P
+    registration_msg['context'] = 'playerRegistration'
+    registration_msg['playerAlias'] = 'harry'
+    plr1_sock.send_json(registration_msg)
+    rep_msg = plr1_sock.recv_json()
+    assert 'error' not in rep_msg.keys()
+    plr1_uuid = deepcopy(rep_msg['data']['playerUUID'])
+
+    registration_msg['playerAlias'] = 'draco'
+    plr2_sock.send_json(registration_msg)
+    rep_msg = plr2_sock.recv_json()
+    assert 'error' not in rep_msg.keys()
+    plr2_uuid = deepcopy(rep_msg['data']['playerUUID'])
+
+    return plr1_uuid, plr2_uuid
+
+
+def _make_noop_movement_selections(player_prefix, n_tokens=11):
+    """Helper: create noop movement selections for all tokens of a player."""
+    selections = [{'pieceID': f'{player_prefix}:HVA:0', 'actionType': 'noop'}]
+    for i in range(1, n_tokens):
+        selections.append({'pieceID': f'{player_prefix}:Patrol:{i}', 'actionType': 'noop'})
+    return selections
+
+
+def _make_noop_engagement_selections(player_prefix, n_tokens=11):
+    """Helper: create noop engagement selections for all tokens of a player."""
+    selections = [{'pieceID': f'{player_prefix}:HVA:0', 'actionType': 'noop', 'targetID': f'{player_prefix}:HVA:0'}]
+    for i in range(1, n_tokens):
+        selections.append({'pieceID': f'{player_prefix}:Patrol:{i}', 'actionType': 'noop', 'targetID': f'{player_prefix}:Patrol:{i}'})
+    return selections
+
+
+def test_TwoPlayerGameServer_handle_move_phase(two_player_game_server_fixture):
+    """ test that complete move phase request from both players updates game state
     """
 
     # ~~~ ARRANGE ~~~
-    # create game object with default params
-    game = koth.KOTHGame(**DEFAULT_PARAMS)
+    game = koth.KOTHGame(
+        max_ring=1,
+        min_ring=1,
+        geo_ring=1,
+        init_board_pattern_p1=INIT_BOARD_PATTERN_2,
+        init_board_pattern_p2=INIT_BOARD_PATTERN_2,
+        **DEFAULT_PARAMS_PARTIAL)
     game.update_turn_phase(U.MOVEMENT)
 
-    # start the python-unity server
     game_server = two_player_game_server_fixture(game)
     game_server.start()
-
-    # remove local game and game_server objects
-    # these are forked in a new thread, don't 
-    # trick yourself into thinking they are the same object
     del game, game_server
 
-    # TODO: complete implementation
-    assert False
+    context = zmq.Context()
+    plr1_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr1_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
+    plr2_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr2_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
 
-def notest_TwoPlayerGameServer_handle_engage_phase(two_player_game_server_fixture):
-    """ test that complete engage phase request updates game state
+    plr1_uuid, plr2_uuid = _register_both_players(plr1_sock, plr2_sock)
+
+    # ~~~ ACT ~~~
+    # Player 1 sends movement actions
+    mov_msg_p1 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'movementPhase',
+        'playerAlias': 'harry',
+        'playerUUID': plr1_uuid,
+        'data': {
+            'kind': 'movementPhaseRequest',
+            'movementSelections': _make_noop_movement_selections('Alpha')
+        }
+    }
+    plr1_sock.send_json(mov_msg_p1)
+    rep_msg_p1 = plr1_sock.recv_json()
+
+    # Player 1 should get a waiting response
+    assert rep_msg_p1['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p1['context'] == 'movementPhase'
+    assert rep_msg_p1['data']['kind'] == 'waitingResponse'
+    assert 'error' not in rep_msg_p1.keys()
+
+    # Player 2 sends movement actions
+    mov_msg_p2 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'movementPhase',
+        'playerAlias': 'draco',
+        'playerUUID': plr2_uuid,
+        'data': {
+            'kind': 'movementPhaseRequest',
+            'movementSelections': _make_noop_movement_selections('Bravo')
+        }
+    }
+    plr2_sock.send_json(mov_msg_p2)
+    rep_msg_p2 = plr2_sock.recv_json()
+
+    # ~~~ ASSERT ~~~
+    # Player 2 should get an advancing response
+    assert rep_msg_p2['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p2['context'] == 'movementPhase'
+    assert rep_msg_p2['data']['kind'] == 'advancingResponse'
+    assert 'error' not in rep_msg_p2.keys()
+
+
+def _advance_both_players_through_movement(plr1_sock, plr2_sock, plr1_uuid, plr2_uuid):
+    """Helper: advance game from MOVEMENT to ENGAGEMENT by sending noop movements."""
+    mov_msg = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'movementPhase',
+        'playerAlias': 'harry',
+        'playerUUID': plr1_uuid,
+        'data': {
+            'kind': 'movementPhaseRequest',
+            'movementSelections': _make_noop_movement_selections('Alpha')
+        }
+    }
+    plr1_sock.send_json(mov_msg)
+    plr1_sock.recv_json()  # waiting response
+
+    mov_msg['playerAlias'] = 'draco'
+    mov_msg['playerUUID'] = plr2_uuid
+    mov_msg['data']['movementSelections'] = _make_noop_movement_selections('Bravo')
+    plr2_sock.send_json(mov_msg)
+    plr2_sock.recv_json()  # advancing response
+
+
+def _advance_both_players_through_engagement(plr1_sock, plr2_sock, plr1_uuid, plr2_uuid):
+    """Helper: advance game from ENGAGEMENT to DRIFT by sending noop engagements."""
+    eng_msg = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'engagementPhase',
+        'playerAlias': 'harry',
+        'playerUUID': plr1_uuid,
+        'data': {
+            'kind': 'engagementPhaseRequest',
+            'engagementSelections': _make_noop_engagement_selections('Alpha')
+        }
+    }
+    plr1_sock.send_json(eng_msg)
+    plr1_sock.recv_json()  # waiting response
+
+    eng_msg['playerAlias'] = 'draco'
+    eng_msg['playerUUID'] = plr2_uuid
+    eng_msg['data']['engagementSelections'] = _make_noop_engagement_selections('Bravo')
+    plr2_sock.send_json(eng_msg)
+    plr2_sock.recv_json()  # advancing response
+
+
+def test_TwoPlayerGameServer_handle_engage_phase(two_player_game_server_fixture):
+    """ test that complete engage phase request from both players updates game state.
+    Note: registration resets the game to MOVEMENT, so we must first advance through
+    the movement phase before testing engagement.
     """
 
     # ~~~ ARRANGE ~~~
-    # create game object with default params
-    game = koth.KOTHGame(**DEFAULT_PARAMS)
-    game.update_turn_phase(U.MOVEMENT)
+    game = koth.KOTHGame(
+        max_ring=1,
+        min_ring=1,
+        geo_ring=1,
+        init_board_pattern_p1=INIT_BOARD_PATTERN_2,
+        init_board_pattern_p2=INIT_BOARD_PATTERN_2,
+        **DEFAULT_PARAMS_PARTIAL)
 
-    # start the python-unity server
     game_server = two_player_game_server_fixture(game)
     game_server.start()
-
-    # remove local game and game_server objects
-    # these are forked in a new thread, don't 
-    # trick yourself into thinking they are the same object
     del game, game_server
 
-    # TODO: complete implementation
-    assert False
+    context = zmq.Context()
+    plr1_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr1_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
+    plr2_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr2_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
 
-def notest_TwoPlayerGameServer_handle_drift_phase(two_player_game_server_fixture):
-    """ test that complete drift phase request updates game state
+    plr1_uuid, plr2_uuid = _register_both_players(plr1_sock, plr2_sock)
+
+    # Advance through movement phase first (game starts in MOVEMENT after reset)
+    _advance_both_players_through_movement(plr1_sock, plr2_sock, plr1_uuid, plr2_uuid)
+
+    # ~~~ ACT ~~~
+    # Player 1 sends engagement actions (all noop)
+    eng_msg_p1 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'engagementPhase',
+        'playerAlias': 'harry',
+        'playerUUID': plr1_uuid,
+        'data': {
+            'kind': 'engagementPhaseRequest',
+            'engagementSelections': _make_noop_engagement_selections('Alpha')
+        }
+    }
+    plr1_sock.send_json(eng_msg_p1)
+    rep_msg_p1 = plr1_sock.recv_json()
+
+    # Player 1 should get a waiting response
+    assert rep_msg_p1['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p1['context'] == 'engagementPhase'
+    assert rep_msg_p1['data']['kind'] == 'waitingResponse'
+    assert 'error' not in rep_msg_p1.keys()
+
+    # Player 2 sends engagement actions (all noop)
+    eng_msg_p2 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'engagementPhase',
+        'playerAlias': 'draco',
+        'playerUUID': plr2_uuid,
+        'data': {
+            'kind': 'engagementPhaseRequest',
+            'engagementSelections': _make_noop_engagement_selections('Bravo')
+        }
+    }
+    plr2_sock.send_json(eng_msg_p2)
+    rep_msg_p2 = plr2_sock.recv_json()
+
+    # ~~~ ASSERT ~~~
+    assert rep_msg_p2['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p2['context'] == 'engagementPhase'
+    assert rep_msg_p2['data']['kind'] == 'advancingResponse'
+    assert 'error' not in rep_msg_p2.keys()
+
+
+def test_TwoPlayerGameServer_handle_drift_phase(two_player_game_server_fixture):
+    """ test that complete drift phase request from both players updates game state.
+    Note: registration resets the game to MOVEMENT, so we must advance through
+    movement and engagement phases before testing drift.
     """
 
     # ~~~ ARRANGE ~~~
-    # create game object with default params
-    game = koth.KOTHGame(**DEFAULT_PARAMS)
-    game.update_turn_phase(U.MOVEMENT)
+    game = koth.KOTHGame(
+        max_ring=1,
+        min_ring=1,
+        geo_ring=1,
+        init_board_pattern_p1=INIT_BOARD_PATTERN_2,
+        init_board_pattern_p2=INIT_BOARD_PATTERN_2,
+        **DEFAULT_PARAMS_PARTIAL)
 
-    # start the python-unity server
     game_server = two_player_game_server_fixture(game)
     game_server.start()
-
-    # remove local game and game_server objects
-    # these are forked in a new thread, don't 
-    # trick yourself into thinking they are the same object
     del game, game_server
 
-    # TODO: complete implementation
-    assert False
+    context = zmq.Context()
+    plr1_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr1_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
+    plr2_sock = ErrorCatchingSocket(context, zmq.REQ)
+    plr2_sock.connect("tcp://localhost:{}".format(ROUTER_PORT_NUM))
+
+    plr1_uuid, plr2_uuid = _register_both_players(plr1_sock, plr2_sock)
+
+    # Advance through movement and engagement phases
+    _advance_both_players_through_movement(plr1_sock, plr2_sock, plr1_uuid, plr2_uuid)
+    _advance_both_players_through_engagement(plr1_sock, plr2_sock, plr1_uuid, plr2_uuid)
+
+    # ~~~ ACT ~~~
+    # Player 1 sends drift request
+    drift_msg_p1 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'driftPhase',
+        'playerAlias': 'harry',
+        'playerUUID': plr1_uuid,
+    }
+    plr1_sock.send_json(drift_msg_p1)
+    rep_msg_p1 = plr1_sock.recv_json()
+
+    # Player 1 should get a waiting response
+    assert rep_msg_p1['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p1['context'] == 'driftPhase'
+    assert rep_msg_p1['data']['kind'] == 'waitingResponse'
+    assert 'error' not in rep_msg_p1.keys()
+
+    # Player 2 sends drift request
+    drift_msg_p2 = {
+        'apiVersion': API_VER_NUM_2P,
+        'context': 'driftPhase',
+        'playerAlias': 'draco',
+        'playerUUID': plr2_uuid,
+    }
+    plr2_sock.send_json(drift_msg_p2)
+    rep_msg_p2 = plr2_sock.recv_json()
+
+    # ~~~ ASSERT ~~~
+    assert rep_msg_p2['apiVersion'] == API_VER_NUM_2P
+    assert rep_msg_p2['context'] == 'driftPhase'
+    assert rep_msg_p2['data']['kind'] == 'advancingResponse'
+    assert 'error' not in rep_msg_p2.keys()
 
 def test_SingleUserGameServer_echo_request(single_user_game_server_fixture):
     """Tests if the echo server responds properly
